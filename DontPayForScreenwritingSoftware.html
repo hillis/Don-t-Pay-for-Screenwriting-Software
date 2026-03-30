@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 <style>
   :root {
     --bg: #1a1a1f;
@@ -78,6 +79,9 @@
     transition: all 0.15s;
   }
   .tb-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .tb-btn:focus-visible, .el-btn:focus-visible, .stab:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
   .tb-btn.active { background: var(--accent); color: #000; font-weight: 600; border-color: var(--accent); }
   .tb-btn.danger { color: #ff6b6b; }
   .tb-btn.danger:hover { background: rgba(255,107,107,0.12); border-color: #ff6b6b; }
@@ -470,6 +474,10 @@
   }
   .find-row button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
   .find-label { font-size: 10px; color: var(--text-dim); width: 50px; }
+  .find-highlight { background: rgba(245,200,66,0.3); border-radius: 2px; }
+  .find-current { background: rgba(245,200,66,0.7); border-radius: 2px; }
+  #case-toggle { font-size: 11px; padding: 3px 7px; min-width: auto; }
+  #case-toggle.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
   mark { background: rgba(245,200,66,0.4); border-radius: 2px; }
 
@@ -597,6 +605,19 @@
     border: 1px solid var(--border);
   }
   .istat span { color: var(--accent); font-weight: 600; }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 768px) {
+    #sidebar { width: 0; }
+    #title-input { display: none; }
+    #toolbar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .page { padding: 48px 24px 48px 36px; min-height: auto; max-width: 100%; }
+    #element-bar { overflow-x: auto; }
+    #find-bar { left: 10px; right: 10px; min-width: auto; }
+    .find-row { flex-wrap: wrap; }
+    #import-modal { width: 95vw; max-width: 95vw; }
+    .tb-sep:nth-child(n+4) { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -605,22 +626,22 @@
 <div id="toolbar">
   <div id="logo">Don't Pay for Screenwriting Software.<span style="display:block;font-size:9px;font-weight:400;color:var(--text-dim);letter-spacing:0.3px;margin-top:1px;">made by Inwood Park Productions</span></div>
   <div class="tb-sep"></div>
-  <button class="tb-btn" onclick="newScript()">New</button>
-  <button class="tb-btn" onclick="saveToFile()">Save</button>
-  <button class="tb-btn" onclick="loadFromFile()">Open</button>
-  <button class="tb-btn" style="color:var(--accent);border-color:rgba(245,200,66,0.3)" onclick="openImportModal()">⬆ Import PDF/DOCX</button>
+  <button class="tb-btn" onclick="newScript()" aria-label="New script">New</button>
+  <button class="tb-btn" onclick="saveToFile()" aria-label="Save script to file">Save</button>
+  <button class="tb-btn" onclick="loadFromFile()" aria-label="Open script file">Open</button>
+  <button class="tb-btn" style="color:var(--accent);border-color:rgba(245,200,66,0.3)" onclick="openImportModal()" aria-label="Import PDF or DOCX file">⬆ Import PDF/DOCX</button>
   <input type="file" id="file-input" accept=".sfx,.txt,.fountain,.fdx" style="display:none" onchange="handleFileLoad(event)">
   <div class="tb-sep"></div>
-  <button class="tb-btn" onclick="openTitlePageModal()">Title Page</button>
-  <button class="tb-btn" onclick="toggleFindBar()">Find/Replace</button>
+  <button class="tb-btn" onclick="openTitlePageModal()" aria-label="Edit title page">Title Page</button>
+  <button class="tb-btn" onclick="toggleFindBar()" aria-label="Toggle find and replace">Find/Replace</button>
   <div class="tb-sep"></div>
-  <input type="text" id="title-input" placeholder="Untitled Screenplay" value="Untitled Screenplay" oninput="markUnsaved()">
+  <input type="text" id="title-input" placeholder="Untitled Screenplay" value="Untitled Screenplay" oninput="markUnsaved()" aria-label="Script title">
   <div class="tb-sep"></div>
-  <button class="tb-btn" onclick="exportPDF()">Export PDF</button>
-  <button class="tb-btn" onclick="exportFountain()">Export .fountain</button>
+  <button class="tb-btn" onclick="exportPDF()" aria-label="Export as PDF">Export PDF</button>
+  <button class="tb-btn" onclick="exportFountain()" aria-label="Export as Fountain format">Export .fountain</button>
   <div class="tb-sep"></div>
-  <button class="tb-btn" onclick="toggleSidebar()">☰ Panels</button>
-  <button class="tb-btn" onclick="toggleDark()">◑ Theme</button>
+  <button class="tb-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar panels">☰ Panels</button>
+  <button class="tb-btn" onclick="toggleDark()" aria-label="Toggle dark and light theme">◑ Theme</button>
 </div>
 
 <!-- ELEMENT BAR -->
@@ -640,10 +661,10 @@
 <div id="main">
   <!-- SIDEBAR -->
   <div id="sidebar">
-    <div id="sidebar-tabs">
-      <div class="stab active" onclick="switchSidebarTab('scenes',this)">Scenes</div>
-      <div class="stab" onclick="switchSidebarTab('characters',this)">Characters</div>
-      <div class="stab" onclick="switchSidebarTab('notes',this)">Notes</div>
+    <div id="sidebar-tabs" role="tablist">
+      <div class="stab active" role="tab" tabindex="0" aria-selected="true" onclick="switchSidebarTab('scenes',this)">Scenes</div>
+      <div class="stab" role="tab" tabindex="0" aria-selected="false" onclick="switchSidebarTab('characters',this)">Characters</div>
+      <div class="stab" role="tab" tabindex="0" aria-selected="false" onclick="switchSidebarTab('notes',this)">Notes</div>
     </div>
     <div id="sidebar-content">
       <div id="tab-scenes"></div>
@@ -676,22 +697,23 @@
 </div>
 
 <!-- AUTOCOMPLETE -->
-<div id="autocomplete"></div>
+<div id="autocomplete" role="listbox" aria-label="Autocomplete suggestions"></div>
 
 <!-- FIND/REPLACE -->
 <div id="find-bar">
   <div class="find-row">
-    <span class="find-label">Find</span>
-    <input type="text" id="find-input" placeholder="Search...">
-    <button onclick="findNext()">↓</button>
-    <button onclick="findPrev()">↑</button>
-    <button onclick="closeFindBar()" style="color:#ff6b6b;">✕</button>
+    <label class="find-label" for="find-input">Find</label>
+    <input type="text" id="find-input" placeholder="Search..." oninput="findAll()">
+    <button onclick="findNext()" aria-label="Find next">↓</button>
+    <button onclick="findPrev()" aria-label="Find previous">↑</button>
+    <button id="case-toggle" class="tb-btn" onclick="toggleCaseSensitive()" aria-label="Toggle case sensitive" title="Case sensitive">Aa</button>
+    <button onclick="closeFindBar()" style="color:#ff6b6b;" aria-label="Close find bar">✕</button>
   </div>
   <div class="find-row">
-    <span class="find-label">Replace</span>
+    <label class="find-label" for="replace-input">Replace</label>
     <input type="text" id="replace-input" placeholder="Replace with...">
-    <button onclick="replaceOne()">Replace</button>
-    <button onclick="replaceAll()">All</button>
+    <button onclick="replaceOne()" aria-label="Replace current match">Replace</button>
+    <button onclick="replaceAll()" aria-label="Replace all matches">All</button>
   </div>
   <div style="font-size:10px;color:var(--text-dim)" id="find-status"></div>
 </div>
@@ -1306,6 +1328,8 @@ let titlePageData = null;
 let undoStack = [];   // array of snapshots [{lines:[{type,text}], focusIdx}]
 let redoStack = [];
 let undoDebounceTimer = null;
+let statsDebounceTimer = null;
+let caseSensitiveFind = false;
 const UNDO_MAX = 100;
 
 // ═══════════════════════════════════════════════════════
@@ -1424,6 +1448,7 @@ function onLineKeydown(e) {
   // Tab: cycle element type
   if (e.key === 'Tab') {
     e.preventDefault();
+    pushUndo();
     const idx = ELEMENT_CYCLE.indexOf(type);
     const next = ELEMENT_CYCLE[(idx + 1) % ELEMENT_CYCLE.length];
     changeLineType(el, next);
@@ -1471,10 +1496,10 @@ function onLineKeydown(e) {
       const prev = lines[idx - 1].el;
       removeLine(el);
       placeCursorAtEnd(prev);
+      updateStats();
+      updateSidebar();
+      markUnsaved();
     }
-    updateStats();
-    updateSidebar();
-    markUnsaved();
     return;
   }
 
@@ -1531,8 +1556,8 @@ function onLineInput(e) {
 
   // Autocomplete
   triggerAutocomplete(el);
-  updateStats();
-  updateSidebar();
+  clearTimeout(statsDebounceTimer);
+  statsDebounceTimer = setTimeout(() => { updateStats(); updateSidebar(); }, 300);
   markUnsaved();
 }
 
@@ -1573,6 +1598,7 @@ function changeLineType(el, type) {
 
 function setElementType(type) {
   if (currentLine) {
+    pushUndo();
     changeLineType(currentLine, type);
     currentLine.focus();
   }
@@ -1626,11 +1652,18 @@ function showAutocomplete(el) {
 
 function renderAutocomplete() {
   const ac = document.getElementById('autocomplete');
-  ac.innerHTML = '<div class="ac-header">Suggestions</div>' +
-    acOptions.map((o, i) =>
-      `<div class="ac-item${i === acIndex ? ' selected' : ''}" onclick="applyAutocomplete('${o.replace(/'/g,"\\'")}')">
-        ${o}
-      </div>`).join('');
+  ac.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'ac-header';
+  header.textContent = 'Suggestions';
+  ac.appendChild(header);
+  acOptions.forEach((o, i) => {
+    const item = document.createElement('div');
+    item.className = 'ac-item' + (i === acIndex ? ' selected' : '');
+    item.textContent = o;
+    item.addEventListener('mousedown', () => applyAutocomplete(o));
+    ac.appendChild(item);
+  });
 }
 
 function applyAutocomplete(value) {
@@ -1744,7 +1777,12 @@ function autoSave() {
   try {
     localStorage.setItem('scriptforge_autosave', JSON.stringify(getScriptData()));
     setSaved();
-  } catch(e) {}
+  } catch(e) {
+    const ind = document.getElementById('save-indicator');
+    ind.textContent = '⚠ Save failed';
+    ind.className = 'unsaved';
+    console.error('Autosave failed:', e.message);
+  }
 }
 
 function loadFromStorage() {
@@ -2001,7 +2039,136 @@ function exportFountain() {
 // PDF EXPORT
 // ═══════════════════════════════════════════════════════
 function exportPDF() {
-  window.print();
+  if (typeof jspdf === 'undefined') { window.print(); return; }
+  const { jsPDF } = jspdf;
+  const doc = new jsPDF({ unit: 'in', format: 'letter' });
+
+  // Industry-standard screenplay margins & positions (inches)
+  const PAGE_W = 8.5, PAGE_H = 11;
+  const M_TOP = 1, M_BOT = 1, M_LEFT = 1.5, M_RIGHT = 1;
+  const LINE_H = 1/6; // 12pt Courier = 6 lines per inch
+  const BODY_W = PAGE_W - M_LEFT - M_RIGHT; // 6 inches
+
+  const ELEM = {
+    'scene-heading':   { left: M_LEFT, width: BODY_W, caps: true, bold: true },
+    'action':          { left: M_LEFT, width: BODY_W },
+    'character':       { left: 3.7, width: 2.5, caps: true },
+    'parenthetical':   { left: 3.1, width: 2 },
+    'dialogue':        { left: 2.5, width: 3.5 },
+    'transition':      { left: M_LEFT, width: BODY_W, caps: true, align: 'right' },
+    'centered':        { left: M_LEFT, width: BODY_W, align: 'center' }
+  };
+
+  // Spacing before each element type (in lines)
+  const SPACE_BEFORE = {
+    'scene-heading': 2, 'action': 1, 'character': 1,
+    'parenthetical': 0, 'dialogue': 0, 'transition': 1, 'centered': 1
+  };
+
+  doc.setFont('courier', 'normal');
+  doc.setFontSize(12);
+
+  let pageNum = 1;
+  let y = M_TOP;
+  let isFirstOnPage = true;
+
+  function newPage() {
+    doc.addPage();
+    pageNum++;
+    y = M_TOP;
+    isFirstOnPage = true;
+    // Page number top-right, starting page 2
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(12);
+    doc.text(pageNum + '.', PAGE_W - M_RIGHT, 0.5, { align: 'right' });
+  }
+
+  function checkSpace(linesNeeded) {
+    if (y + linesNeeded * LINE_H > PAGE_H - M_BOT) {
+      newPage();
+      return true;
+    }
+    return false;
+  }
+
+  // Title page
+  if (titlePageData && titlePageData.title) {
+    doc.setFont('courier', 'bold');
+    doc.setFontSize(12);
+    const title = titlePageData.title.toUpperCase();
+    doc.text(title, PAGE_W / 2, 4, { align: 'center' });
+    doc.setFont('courier', 'normal');
+    if (titlePageData.author) {
+      doc.text('Written by', PAGE_W / 2, 4.5, { align: 'center' });
+      doc.text(titlePageData.author, PAGE_W / 2, 5, { align: 'center' });
+    }
+    if (titlePageData.based) {
+      doc.text(titlePageData.based, PAGE_W / 2, 5.5, { align: 'center' });
+    }
+    const contactLines = [];
+    if (titlePageData.contact) contactLines.push(titlePageData.contact);
+    if (titlePageData.date) contactLines.push(titlePageData.date);
+    if (titlePageData.draft) contactLines.push(titlePageData.draft);
+    contactLines.forEach((cl, i) => {
+      doc.text(cl, M_LEFT, 9 + i * LINE_H * 2);
+    });
+    newPage();
+  }
+
+  // Render screenplay lines
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const text = l.el.innerText.trim();
+    if (!text) continue;
+
+    const type = l.type || 'action';
+    const cfg = ELEM[type] || ELEM['action'];
+    const spaceBefore = isFirstOnPage ? 0 : (SPACE_BEFORE[type] || 1);
+
+    let displayText = cfg.caps ? text.toUpperCase() : text;
+    const maxW = cfg.width;
+
+    // Word wrap
+    if (cfg.bold) doc.setFont('courier', 'bold');
+    else doc.setFont('courier', 'normal');
+    const wrappedLines = doc.splitTextToSize(displayText, maxW);
+
+    // Avoid orphan: don't leave character name alone at bottom of page
+    if (type === 'character') {
+      // Count how many dialogue/paren lines follow
+      let followLines = 0;
+      for (let j = i + 1; j < lines.length && (lines[j].type === 'dialogue' || lines[j].type === 'parenthetical'); j++) {
+        const ft = lines[j].el.innerText.trim();
+        if (ft) followLines += doc.splitTextToSize(ft, (ELEM[lines[j].type] || ELEM['action']).width).length;
+        if (followLines >= 1) break;
+      }
+      const totalNeeded = spaceBefore + wrappedLines.length + Math.min(followLines, 1);
+      if (y + totalNeeded * LINE_H > PAGE_H - M_BOT) {
+        newPage();
+      }
+    }
+
+    // Add spacing
+    y += spaceBefore * LINE_H;
+    checkSpace(wrappedLines.length);
+
+    // Draw lines
+    wrappedLines.forEach(wl => {
+      if (y + LINE_H > PAGE_H - M_BOT) newPage();
+      let x = cfg.left;
+      let opts = {};
+      if (cfg.align === 'right') { x = cfg.left + cfg.width; opts.align = 'right'; }
+      else if (cfg.align === 'center') { x = cfg.left + cfg.width / 2; opts.align = 'center'; }
+      doc.text(wl, x, y);
+      y += LINE_H;
+      isFirstOnPage = false;
+    });
+
+    if (cfg.bold) doc.setFont('courier', 'normal');
+  }
+
+  const title = document.getElementById('title-input').value || 'Untitled Screenplay';
+  doc.save(title.replace(/[^a-zA-Z0-9\s\-_]/g, '') + '.pdf');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2047,36 +2214,97 @@ function closeFindBar() {
   clearHighlights();
 }
 
+function toggleCaseSensitive() {
+  caseSensitiveFind = !caseSensitiveFind;
+  document.getElementById('case-toggle').classList.toggle('active', caseSensitiveFind);
+  findAll();
+  updateFindHighlights();
+}
+
 function findAll() {
   clearHighlights();
   const q = document.getElementById('find-input').value;
-  if (!q) return [];
+  if (!q) { updateFindStatus(); return []; }
   findMatches = [];
   lines.forEach((l, li) => {
     const text = l.el.innerText;
+    const searchText = caseSensitiveFind ? text : text.toLowerCase();
+    const searchQ = caseSensitiveFind ? q : q.toLowerCase();
     let idx = 0;
     while (true) {
-      const pos = text.toLowerCase().indexOf(q.toLowerCase(), idx);
+      const pos = searchText.indexOf(searchQ, idx);
       if (pos === -1) break;
       findMatches.push({ lineIdx: li, pos, len: q.length });
       idx = pos + 1;
     }
   });
-  document.getElementById('find-status').textContent = `${findMatches.length} match(es)`;
+  findIdx = Math.min(findIdx, Math.max(0, findMatches.length - 1));
+  updateFindStatus();
+  updateFindHighlights();
   return findMatches;
 }
 
+function updateFindStatus() {
+  const status = document.getElementById('find-status');
+  if (findMatches.length === 0) {
+    const q = document.getElementById('find-input').value;
+    status.textContent = q ? 'No matches' : '';
+  } else {
+    status.textContent = `${findIdx + 1} of ${findMatches.length}`;
+  }
+}
+
+function updateFindHighlights() {
+  // Remove old highlights
+  document.querySelectorAll('.find-highlight, .find-current').forEach(span => {
+    const parent = span.parentNode;
+    parent.replaceChild(document.createTextNode(span.textContent), span);
+    parent.normalize();
+  });
+  if (findMatches.length === 0) return;
+  // Group matches by line
+  const byLine = {};
+  findMatches.forEach((m, i) => {
+    if (!byLine[m.lineIdx]) byLine[m.lineIdx] = [];
+    byLine[m.lineIdx].push({ ...m, idx: i });
+  });
+  for (const li in byLine) {
+    const el = lines[li].el;
+    const text = el.innerText;
+    const matches = byLine[li].sort((a, b) => b.pos - a.pos); // reverse order to preserve positions
+    // Build highlighted HTML safely using DOM
+    const frag = document.createDocumentFragment();
+    let lastEnd = 0;
+    const sorted = [...matches].sort((a, b) => a.pos - b.pos);
+    sorted.forEach(m => {
+      if (m.pos > lastEnd) frag.appendChild(document.createTextNode(text.slice(lastEnd, m.pos)));
+      const span = document.createElement('span');
+      span.className = m.idx === findIdx ? 'find-current' : 'find-highlight';
+      span.textContent = text.slice(m.pos, m.pos + m.len);
+      frag.appendChild(span);
+      lastEnd = m.pos + m.len;
+    });
+    if (lastEnd < text.length) frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+    el.innerHTML = '';
+    el.appendChild(frag);
+  }
+}
+
 function findNext() {
-  findAll();
+  if (findMatches.length === 0) findAll();
   if (findMatches.length === 0) return;
   findIdx = (findIdx + 1) % findMatches.length;
+  updateFindStatus();
+  updateFindHighlights();
   scrollToMatch(findMatches[findIdx]);
 }
 
 function findPrev() {
-  findAll();
+  if (findMatches.length === 0) findAll();
   if (findMatches.length === 0) return;
   findIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
+  updateFindStatus();
+  updateFindHighlights();
   scrollToMatch(findMatches[findIdx]);
 }
 
@@ -2084,10 +2312,14 @@ function scrollToMatch(match) {
   if (!match) return;
   const el = lines[match.lineIdx].el;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.focus();
 }
 
 function clearHighlights() {
+  document.querySelectorAll('.find-highlight, .find-current').forEach(span => {
+    const parent = span.parentNode;
+    parent.replaceChild(document.createTextNode(span.textContent), span);
+    parent.normalize();
+  });
   findMatches = [];
   findIdx = 0;
 }
@@ -2112,15 +2344,22 @@ function replaceAll() {
   const q = document.getElementById('find-input').value;
   const r = document.getElementById('replace-input').value;
   if (!q) return;
+  pushUndo();
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+  let count = 0;
   lines.forEach(l => {
-    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
-    if (re.test(l.el.innerText)) {
-      l.el.innerText = l.el.innerText.replace(re, r);
+    const orig = l.el.innerText;
+    const updated = orig.replace(re, r);
+    if (updated !== orig) {
+      l.el.innerText = updated;
+      count += (orig.match(re) || []).length;
     }
   });
-  document.getElementById('find-status').textContent = 'All replaced';
-  markUnsaved();
-  updateStats();
+  document.getElementById('find-status').textContent = count > 0 ? `Replaced ${count} occurrence${count !== 1 ? 's' : ''}` : 'No matches';
+  if (count > 0) {
+    markUnsaved();
+    updateStats();
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2130,9 +2369,15 @@ function globalKeys(e) {
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
   if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
-  if (ctrl && e.key === 's') { e.preventDefault(); autoSave(); return; }
+  if (ctrl && e.key === 's' && e.shiftKey) { e.preventDefault(); saveToFile(); return; }
+  if (ctrl && e.key === 's' && !e.shiftKey) { e.preventDefault(); autoSave(); return; }
+  if (ctrl && e.key === 'h') { e.preventDefault(); toggleFindBar(); setTimeout(() => document.getElementById('replace-input').focus(), 50); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); toggleFindBar(); return; }
   if (ctrl && e.key === 'n') { e.preventDefault(); newScript(); return; }
+  if (e.key === 'Escape') {
+    if (document.getElementById('find-bar').classList.contains('open')) { closeFindBar(); return; }
+    if (document.getElementById('modal-overlay')?.style.display === 'flex') { closeImportModal(); return; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════
