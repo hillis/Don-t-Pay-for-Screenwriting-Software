@@ -313,6 +313,59 @@
   .script-line[data-type="transition"]:empty::after { content: 'CUT TO:'; }
   .script-line[data-type="centered"]:empty::after { content: 'Centered text...'; }
 
+  /* ─── DUAL DIALOGUE ─── */
+  .dual-dialogue-wrapper {
+    display: flex; gap: 0; width: 100%;
+  }
+  .dual-dialogue-col {
+    flex: 1; min-width: 0;
+  }
+  .dual-dialogue-col .script-line[data-type="character"] {
+    margin-left: 40px; padding-top: 12px;
+  }
+  .dual-dialogue-col .script-line[data-type="dialogue"] {
+    margin-left: 20px; margin-right: 20px;
+  }
+  .dual-dialogue-col .script-line[data-type="parenthetical"] {
+    margin-left: 30px; margin-right: 30px;
+  }
+
+  /* ─── BREAKDOWN TAGS ─── */
+  .breakdown-tag {
+    border-bottom: 2px solid; border-radius: 1px; cursor: pointer;
+  }
+  .breakdown-tag[data-category="cast"] { border-color: #ff6b6b; background: rgba(255,107,107,0.12); }
+  .breakdown-tag[data-category="props"] { border-color: #ffa726; background: rgba(255,167,38,0.12); }
+  .breakdown-tag[data-category="wardrobe"] { border-color: #ab47bc; background: rgba(171,71,188,0.12); }
+  .breakdown-tag[data-category="vehicles"] { border-color: #42a5f5; background: rgba(66,165,245,0.12); }
+  .breakdown-tag[data-category="locations"] { border-color: #66bb6a; background: rgba(102,187,106,0.12); }
+  .breakdown-tag[data-category="makeup"] { border-color: #ec407a; background: rgba(236,64,122,0.12); }
+  .breakdown-tag[data-category="sound"] { border-color: #26c6da; background: rgba(38,198,218,0.12); }
+  .breakdown-tag[data-category="sfx"] { border-color: #ffd54f; background: rgba(255,213,79,0.12); }
+  .breakdown-tag[data-category="stunts"] { border-color: #8d6e63; background: rgba(141,110,99,0.12); }
+  .breakdown-tag[data-category="other"] { border-color: #78909c; background: rgba(120,144,156,0.12); }
+
+  #breakdown-picker {
+    position: fixed; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); z-index: 300;
+    padding: 6px; display: none; min-width: 180px;
+  }
+  #breakdown-picker.open { display: block; }
+  .bp-item {
+    padding: 6px 10px; font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px; border-radius: 4px;
+  }
+  .bp-item:hover { background: var(--surface2); }
+  .bp-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .breakdown-scene { margin-bottom: 10px; }
+  .breakdown-scene-title { font-size: 11px; font-weight: 600; color: var(--accent); padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .breakdown-cat-header { font-size: 9px; text-transform: uppercase; color: var(--text-dim); padding: 4px 8px; margin-top: 4px; letter-spacing: 0.5px; }
+  .breakdown-item {
+    font-size: 11px; padding: 3px 8px; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 4px;
+  }
+  .breakdown-item:hover { background: var(--surface2); }
+
   /* ─── AUTOCOMPLETE ─── */
   #autocomplete {
     position: fixed;
@@ -654,6 +707,9 @@
   <button class="el-btn" data-type="dialogue" onclick="setElementType('dialogue')">Dialogue</button>
   <button class="el-btn" data-type="transition" onclick="setElementType('transition')">Transition</button>
   <button class="el-btn" data-type="centered" onclick="setElementType('centered')">Centered</button>
+  <div class="tb-sep"></div>
+  <button class="el-btn" id="dual-btn" style="display:none" onclick="toggleDualDialogue(currentLine)" aria-label="Toggle dual dialogue">Dual</button>
+  <button class="el-btn" id="breakdown-tag-btn" onclick="initiateBreakdownTag()" aria-label="Tag selected text for breakdown" title="Ctrl+B: Tag selection">Tag</button>
   <span id="element-label">Tab: cycle element type &nbsp;|&nbsp; Enter: next line</span>
 </div>
 
@@ -665,6 +721,7 @@
       <div class="stab active" role="tab" tabindex="0" aria-selected="true" onclick="switchSidebarTab('scenes',this)">Scenes</div>
       <div class="stab" role="tab" tabindex="0" aria-selected="false" onclick="switchSidebarTab('characters',this)">Characters</div>
       <div class="stab" role="tab" tabindex="0" aria-selected="false" onclick="switchSidebarTab('notes',this)">Notes</div>
+      <div class="stab" role="tab" tabindex="0" aria-selected="false" onclick="switchSidebarTab('breakdown',this)">Tags</div>
     </div>
     <div id="sidebar-content">
       <div id="tab-scenes"></div>
@@ -672,6 +729,7 @@
       <div id="tab-notes" style="display:none">
         <textarea id="notes-area" placeholder="Production notes, story ideas, reminders..."></textarea>
       </div>
+      <div id="tab-breakdown" style="display:none"></div>
     </div>
   </div>
 
@@ -698,6 +756,9 @@
 
 <!-- AUTOCOMPLETE -->
 <div id="autocomplete" role="listbox" aria-label="Autocomplete suggestions"></div>
+
+<!-- BREAKDOWN PICKER -->
+<div id="breakdown-picker"></div>
 
 <!-- FIND/REPLACE -->
 <div id="find-bar">
@@ -1357,6 +1418,27 @@ const NEXT_TYPE = {
   'centered': 'action',
 };
 
+// Breakdown categories
+const BREAKDOWN_CATEGORIES = {
+  'cast':      { label: 'Cast',            color: '#ff6b6b' },
+  'props':     { label: 'Props',           color: '#ffa726' },
+  'wardrobe':  { label: 'Wardrobe',        color: '#ab47bc' },
+  'vehicles':  { label: 'Vehicles',        color: '#42a5f5' },
+  'locations': { label: 'Locations',       color: '#66bb6a' },
+  'makeup':    { label: 'Makeup/Hair',     color: '#ec407a' },
+  'sound':     { label: 'Sound',           color: '#26c6da' },
+  'sfx':       { label: 'Special Effects', color: '#ffd54f' },
+  'stunts':    { label: 'Stunts',          color: '#8d6e63' },
+  'other':     { label: 'Other',           color: '#78909c' },
+};
+
+function serializeLine(l) {
+  const entry = { type: l.type, text: l.el.innerText };
+  if (l.dual) entry.dual = true;
+  if (l.tags && l.tags.length) entry.tags = JSON.parse(JSON.stringify(l.tags));
+  return entry;
+}
+
 // ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
@@ -1371,7 +1453,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', globalKeys);
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#autocomplete')) hideAutocomplete();
+    if (!e.target.closest('#breakdown-picker')) hideBreakdownPicker();
   });
+  initBreakdownPicker();
   setInterval(autoSave, 10000);
 });
 
@@ -1398,7 +1482,7 @@ function addLine(type, text, focus) {
   const el = createLineEl(type, text || '');
   const page = document.getElementById('page-1');
   page.appendChild(el);
-  lines.push({ el, type });
+  lines.push({ el, type, dual: false, tags: [] });
   if (focus) {
     setTimeout(() => { el.focus(); placeCursorAtEnd(el); }, 10);
   }
@@ -1413,10 +1497,10 @@ function insertLineAfter(refEl, type, text, focus) {
 
   if (idx >= 0 && idx < lines.length - 1) {
     page.insertBefore(el, lines[idx + 1].el);
-    lines.splice(idx + 1, 0, { el, type });
+    lines.splice(idx + 1, 0, { el, type, dual: false, tags: [] });
   } else {
     page.appendChild(el);
-    lines.push({ el, type });
+    lines.push({ el, type, dual: false, tags: [] });
   }
 
   if (focus) {
@@ -1428,6 +1512,7 @@ function insertLineAfter(refEl, type, text, focus) {
 function removeLine(el) {
   const idx = lines.findIndex(l => l.el === el);
   if (idx >= 0) {
+    const wasDual = lines[idx].dual;
     lines.splice(idx, 1);
     el.remove();
     if (lines.length > 0) {
@@ -1435,6 +1520,7 @@ function removeLine(el) {
       lines[newIdx].el.focus();
       placeCursorAtEnd(lines[newIdx].el);
     }
+    if (wasDual) rebuildDualWrappers();
   }
 }
 
@@ -1544,12 +1630,21 @@ function onLineKeydown(e) {
 
 function onLineInput(e) {
   const el = e.currentTarget;
-  const text = el.innerText;
+  const lineEntry = lines.find(l => l.el === el);
+  const newText = getCleanText(el);
   const type = el.dataset.type;
+
+  // Reconcile breakdown tags
+  if (lineEntry && lineEntry.tags && lineEntry.tags.length) {
+    const oldText = lineEntry._prevText || '';
+    reconcileTagPositions(lineEntry, oldText, newText);
+    renderBreakdownTags(lineEntry);
+  }
+  if (lineEntry) lineEntry._prevText = newText;
 
   // Auto-detect scene heading start
   if (type === 'action') {
-    if (/^(INT\.|EXT\.|INT\.\/EXT\.|EXT\.\/INT\.)/i.test(text)) {
+    if (/^(INT\.|EXT\.|INT\.\/EXT\.|EXT\.\/INT\.)/i.test(newText)) {
       changeLineType(el, 'scene-heading');
     }
   }
@@ -1567,7 +1662,10 @@ function onLineFocus(e) {
   currentLine = el;
   el.classList.add('focused-line');
   currentType = el.dataset.type;
+  const lineEntry = lines.find(l => l.el === el);
+  if (lineEntry) lineEntry._prevText = getCleanText(el);
   updateElementBar();
+  hideBreakdownPicker();
 }
 
 function onLineBlur(e) {
@@ -1591,7 +1689,10 @@ function onLinePaste(e) {
 function changeLineType(el, type) {
   el.dataset.type = type;
   const idx = lines.findIndex(l => l.el === el);
-  if (idx >= 0) lines[idx].type = type;
+  if (idx >= 0) {
+    lines[idx].type = type;
+    if (type !== 'character') lines[idx].dual = false;
+  }
   currentType = type;
   updateElementBar();
 }
@@ -1608,8 +1709,18 @@ function setElementType(type) {
 
 function updateElementBar() {
   document.querySelectorAll('.el-btn').forEach(btn => {
+    if (btn.id === 'dual-btn' || btn.id === 'breakdown-tag-btn') return;
     btn.classList.toggle('active', btn.dataset.type === currentType);
   });
+  // Show/hide dual button
+  const dualBtn = document.getElementById('dual-btn');
+  if (currentType === 'character' && currentLine) {
+    dualBtn.style.display = '';
+    const entry = lines.find(l => l.el === currentLine);
+    dualBtn.classList.toggle('active', entry && entry.dual);
+  } else {
+    dualBtn.style.display = 'none';
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1688,7 +1799,7 @@ function hideAutocomplete() {
 function switchSidebarTab(tab, btn) {
   document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['scenes','characters','notes'].forEach(t => {
+  ['scenes','characters','notes','breakdown'].forEach(t => {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
   });
 }
@@ -1727,6 +1838,7 @@ function updateSidebar() {
 
   // Update global character set
   characterNames = new Set(Object.keys(charCount));
+  updateBreakdownSidebar();
 }
 
 function scrollToLine(el) {
@@ -1769,7 +1881,7 @@ function getScriptData() {
     title: document.getElementById('title-input').value,
     notes: document.getElementById('notes-area').value,
     titlePage: titlePageData,
-    lines: lines.map(l => ({ type: l.type, text: l.el.innerText }))
+    lines: lines.map(serializeLine)
   };
 }
 
@@ -1797,7 +1909,14 @@ function loadFromStorage() {
     // clear
     page.innerHTML = '<div class="page-number">1.</div>';
     lines = [];
-    (data.lines || []).forEach(l => addLine(l.type, l.text, false));
+    (data.lines || []).forEach(l => {
+      addLine(l.type, l.text, false);
+      const entry = lines[lines.length - 1];
+      if (l.dual) entry.dual = true;
+      if (l.tags) entry.tags = l.tags;
+    });
+    rebuildDualWrappers();
+    lines.forEach(l => { if (l.tags && l.tags.length) renderBreakdownTags(l); });
     setSaved();
   } catch(e) {}
 }
@@ -1813,7 +1932,7 @@ function markUnsaved() {
 
 function pushUndo() {
   const snapshot = {
-    lines: lines.map(l => ({ type: l.type, text: l.el.innerText })),
+    lines: lines.map(serializeLine),
     focusIdx: lines.findIndex(l => l.el === currentLine)
   };
   // Don't push duplicate of top
@@ -1832,7 +1951,14 @@ function applySnapshot(snapshot) {
   const page = document.getElementById('page-1');
   page.innerHTML = '<div class="page-number">1.</div>';
   lines = [];
-  snapshot.lines.forEach(l => addLine(l.type, l.text, false));
+  snapshot.lines.forEach(l => {
+    addLine(l.type, l.text, false);
+    const entry = lines[lines.length - 1];
+    if (l.dual) entry.dual = true;
+    if (l.tags) entry.tags = JSON.parse(JSON.stringify(l.tags));
+  });
+  rebuildDualWrappers();
+  lines.forEach(l => { if (l.tags && l.tags.length) renderBreakdownTags(l); });
   const focusEl = lines[snapshot.focusIdx >= 0 ? snapshot.focusIdx : lines.length - 1];
   if (focusEl) { focusEl.el.focus(); placeCursorAtEnd(focusEl.el); }
   updateStats();
@@ -1843,7 +1969,7 @@ function undo() {
   if (undoStack.length === 0) return;
   // Push current state to redo before undoing
   redoStack.push({
-    lines: lines.map(l => ({ type: l.type, text: l.el.innerText })),
+    lines: lines.map(serializeLine),
     focusIdx: lines.findIndex(l => l.el === currentLine)
   });
   const snapshot = undoStack.pop();
@@ -1854,7 +1980,7 @@ function undo() {
 function redo() {
   if (redoStack.length === 0) return;
   undoStack.push({
-    lines: lines.map(l => ({ type: l.type, text: l.el.innerText })),
+    lines: lines.map(serializeLine),
     focusIdx: lines.findIndex(l => l.el === currentLine)
   });
   const snapshot = redoStack.pop();
@@ -1941,14 +2067,18 @@ function importFountain(text) {
     let type = 'action';
     if (t === '') { prevBlank = true; return; }
     if (/^(INT\.|EXT\.|INT\.\/EXT\.|EXT\.\/INT\.)/i.test(t) && prevBlank) type = 'scene-heading';
-    else if (/^[A-Z][A-Z0-9\s\(\)]+$/.test(t) && prevBlank && t.length < 40) type = 'character';
+    else if (/^[A-Z][A-Z0-9\s\(\)]+(\s*\^)?$/.test(t) && prevBlank && t.length < 40) type = 'character';
     else if (/^(FADE IN:|FADE OUT:|CUT TO:|DISSOLVE TO:|SMASH CUT TO:)/.test(t)) type = 'transition';
     else if (/^\(.*\)$/.test(t)) type = 'parenthetical';
     else type = 'action';
+    let isDual = false;
+    if (type === 'character' && /\s*\^$/.test(t)) { isDual = true; t = t.replace(/\s*\^$/, ''); }
     addLine(type, t, false);
+    if (isDual) lines[lines.length - 1].dual = true;
     prevBlank = false;
   });
   if (lines.length === 0) addLine('action','',true);
+  rebuildDualWrappers();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2023,7 +2153,7 @@ function exportFountain() {
   lines.forEach(l => {
     const t = l.el.innerText;
     if (l.type === 'scene-heading') out += '\n' + t.toUpperCase() + '\n\n';
-    else if (l.type === 'character') out += '\n' + t.toUpperCase() + '\n';
+    else if (l.type === 'character') out += '\n' + t.toUpperCase() + (l.dual ? ' ^' : '') + '\n';
     else if (l.type === 'transition') out += '\n' + t.toUpperCase() + '\n\n';
     else out += t + '\n';
   });
@@ -2115,11 +2245,60 @@ function exportPDF() {
     newPage();
   }
 
+  // Dual dialogue column positions
+  const DUAL_L = { 'character': { left: 1.7, width: 2.3, caps: true }, 'parenthetical': { left: 1.9, width: 1.8 }, 'dialogue': { left: 1.5, width: 2.5 } };
+  const DUAL_R = { 'character': { left: 4.9, width: 2.3, caps: true }, 'parenthetical': { left: 5.1, width: 1.8 }, 'dialogue': { left: 4.7, width: 2.5 } };
+
+  function renderBlock(block, dualCfg) {
+    let blockY = y;
+    block.forEach(l => {
+      const text = l.el.innerText.trim();
+      if (!text) return;
+      const type = l.type || 'action';
+      const cfg = dualCfg ? (dualCfg[type] || ELEM[type] || ELEM['action']) : (ELEM[type] || ELEM['action']);
+      let displayText = cfg.caps ? text.toUpperCase() : text;
+      if (cfg.bold) doc.setFont('courier', 'bold'); else doc.setFont('courier', 'normal');
+      const wrapped = doc.splitTextToSize(displayText, cfg.width);
+      wrapped.forEach(wl => {
+        let x = cfg.left;
+        doc.text(wl, x, blockY);
+        blockY += LINE_H;
+      });
+      if (cfg.bold) doc.setFont('courier', 'normal');
+    });
+    return blockY;
+  }
+
   // Render screenplay lines
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     const text = l.el.innerText.trim();
     if (!text) continue;
+
+    // Handle dual dialogue
+    if (l.type === 'character' && !l.dual) {
+      const blockA = findDialogueBlock(i);
+      if (blockA && blockA.end + 1 < lines.length && lines[blockA.end + 1].type === 'character' && lines[blockA.end + 1].dual) {
+        const blockB = findDialogueBlock(blockA.end + 1);
+        if (blockB) {
+          const linesA = [];
+          for (let j = blockA.start; j <= blockA.end; j++) linesA.push(lines[j]);
+          const linesB = [];
+          for (let j = blockB.start; j <= blockB.end; j++) linesB.push(lines[j]);
+          if (!isFirstOnPage) y += LINE_H;
+          checkSpace(3);
+          const endA = renderBlock(linesA, DUAL_L);
+          const endB = renderBlock(linesB, DUAL_R);
+          y = Math.max(endA, endB);
+          isFirstOnPage = false;
+          i = blockB.end;
+          continue;
+        }
+      }
+    }
+
+    // Skip dual character lines (handled above with their pair)
+    if (l.type === 'character' && l.dual) continue;
 
     const type = l.type || 'action';
     const cfg = ELEM[type] || ELEM['action'];
@@ -2135,7 +2314,6 @@ function exportPDF() {
 
     // Avoid orphan: don't leave character name alone at bottom of page
     if (type === 'character') {
-      // Count how many dialogue/paren lines follow
       let followLines = 0;
       for (let j = i + 1; j < lines.length && (lines[j].type === 'dialogue' || lines[j].type === 'parenthetical'); j++) {
         const ft = lines[j].el.innerText.trim();
@@ -2363,6 +2541,271 @@ function replaceAll() {
 }
 
 // ═══════════════════════════════════════════════════════
+// DUAL DIALOGUE
+// ═══════════════════════════════════════════════════════
+function findDialogueBlock(charIdx) {
+  if (charIdx < 0 || charIdx >= lines.length || lines[charIdx].type !== 'character') return null;
+  let end = charIdx;
+  for (let i = charIdx + 1; i < lines.length; i++) {
+    if (lines[i].type === 'dialogue' || lines[i].type === 'parenthetical') end = i;
+    else break;
+  }
+  return { start: charIdx, end };
+}
+
+function toggleDualDialogue(el) {
+  if (!el) return;
+  const idx = lines.findIndex(l => l.el === el);
+  if (idx < 0 || lines[idx].type !== 'character') return;
+  // Find preceding dialogue block
+  let prevCharIdx = -1;
+  for (let i = idx - 1; i >= 0; i--) {
+    if (lines[i].type === 'character') { prevCharIdx = i; break; }
+    if (lines[i].type !== 'dialogue' && lines[i].type !== 'parenthetical') break;
+  }
+  if (prevCharIdx < 0) return; // no preceding character block
+  pushUndo();
+  lines[idx].dual = !lines[idx].dual;
+  rebuildDualWrappers();
+  markUnsaved();
+  updateElementBar();
+}
+
+function rebuildDualWrappers() {
+  const page = document.getElementById('page-1');
+  // Unwrap existing wrappers
+  page.querySelectorAll('.dual-dialogue-wrapper').forEach(wrapper => {
+    while (wrapper.firstChild) {
+      // Move children from columns back to page
+      const col = wrapper.firstChild;
+      if (col.classList && col.classList.contains('dual-dialogue-col')) {
+        while (col.firstChild) page.insertBefore(col.firstChild, wrapper);
+        col.remove();
+      } else {
+        page.insertBefore(col, wrapper);
+      }
+    }
+    wrapper.remove();
+  });
+  // Scan for dual pairs and wrap them
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].type === 'character' && lines[i].dual) {
+      const blockB = findDialogueBlock(i);
+      if (!blockB) continue;
+      // Find preceding character block
+      let prevCharIdx = -1;
+      for (let j = i - 1; j >= 0; j--) {
+        if (lines[j].type === 'character') { prevCharIdx = j; break; }
+        if (lines[j].type !== 'dialogue' && lines[j].type !== 'parenthetical') break;
+      }
+      if (prevCharIdx < 0) { lines[i].dual = false; continue; }
+      const blockA = findDialogueBlock(prevCharIdx);
+      if (!blockA) continue;
+      // Create wrapper
+      const wrapper = document.createElement('div');
+      wrapper.className = 'dual-dialogue-wrapper';
+      const colA = document.createElement('div');
+      colA.className = 'dual-dialogue-col';
+      const colB = document.createElement('div');
+      colB.className = 'dual-dialogue-col';
+      // Insert wrapper before first element of blockA
+      page.insertBefore(wrapper, lines[blockA.start].el);
+      // Move blockA elements into colA
+      for (let j = blockA.start; j <= blockA.end; j++) colA.appendChild(lines[j].el);
+      // Move blockB elements into colB
+      for (let j = blockB.start; j <= blockB.end; j++) colB.appendChild(lines[j].el);
+      wrapper.appendChild(colA);
+      wrapper.appendChild(colB);
+      // Skip past blockB
+      i = blockB.end;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// SCENE BREAKDOWN
+// ═══════════════════════════════════════════════════════
+function initBreakdownPicker() {
+  const picker = document.getElementById('breakdown-picker');
+  picker.innerHTML = Object.entries(BREAKDOWN_CATEGORIES).map(([key, cat]) =>
+    `<div class="bp-item" data-category="${key}">
+      <span class="bp-dot" style="background:${cat.color}"></span>${cat.label}
+    </div>`
+  ).join('');
+  picker.querySelectorAll('.bp-item').forEach(item => {
+    item.addEventListener('mousedown', e => {
+      e.preventDefault();
+      applyPickerCategory(item.dataset.category);
+    });
+  });
+}
+
+let pendingTagSelection = null;
+
+function initiateBreakdownTag() {
+  if (!currentLine) return;
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  // Verify selection is within current line
+  if (!currentLine.contains(range.startContainer) || !currentLine.contains(range.endContainer)) return;
+  // Get text positions - strip breakdown spans first to get clean offsets
+  const cleanText = getCleanText(currentLine);
+  const selText = sel.toString().trim();
+  if (!selText) return;
+  // Find the position of selected text in clean text
+  const start = cleanText.indexOf(selText);
+  if (start < 0) return;
+  pendingTagSelection = { lineEl: currentLine, start, end: start + selText.length, text: selText };
+  // Position picker near selection
+  const rect = range.getBoundingClientRect();
+  const picker = document.getElementById('breakdown-picker');
+  picker.style.left = rect.left + 'px';
+  picker.style.top = (rect.bottom + 4) + 'px';
+  picker.classList.add('open');
+}
+
+function applyPickerCategory(category) {
+  const picker = document.getElementById('breakdown-picker');
+  picker.classList.remove('open');
+  if (!pendingTagSelection) return;
+  const { lineEl, start, end, text } = pendingTagSelection;
+  const lineEntry = lines.find(l => l.el === lineEl);
+  if (!lineEntry) return;
+  // Check for overlap
+  const hasOverlap = (lineEntry.tags || []).some(t =>
+    (start < t.end && end > t.start)
+  );
+  if (hasOverlap) { pendingTagSelection = null; return; }
+  pushUndo();
+  if (!lineEntry.tags) lineEntry.tags = [];
+  lineEntry.tags.push({ start, end, category, text });
+  lineEntry.tags.sort((a, b) => a.start - b.start);
+  renderBreakdownTags(lineEntry);
+  updateBreakdownSidebar();
+  markUnsaved();
+  pendingTagSelection = null;
+}
+
+function hideBreakdownPicker() {
+  document.getElementById('breakdown-picker').classList.remove('open');
+  pendingTagSelection = null;
+}
+
+function getCleanText(el) {
+  // Get text content stripping any breakdown spans
+  let text = '';
+  el.childNodes.forEach(node => {
+    if (node.nodeType === 3) text += node.textContent;
+    else if (node.nodeType === 1) text += node.textContent;
+  });
+  return text;
+}
+
+function renderBreakdownTags(lineEntry) {
+  const el = lineEntry.el;
+  const tags = lineEntry.tags;
+  if (!tags || !tags.length) return;
+  const text = getCleanText(el);
+  // Validate and filter stale tags
+  lineEntry.tags = tags.filter(t => t.start >= 0 && t.end <= text.length && text.slice(t.start, t.end) === t.text);
+  if (!lineEntry.tags.length) { el.textContent = text; return; }
+  // Build DOM with tag spans
+  const frag = document.createDocumentFragment();
+  let lastEnd = 0;
+  lineEntry.tags.forEach((t, idx) => {
+    if (t.start > lastEnd) frag.appendChild(document.createTextNode(text.slice(lastEnd, t.start)));
+    const span = document.createElement('span');
+    span.className = 'breakdown-tag';
+    span.dataset.category = t.category;
+    span.dataset.tagIdx = idx;
+    span.textContent = text.slice(t.start, t.end);
+    span.title = BREAKDOWN_CATEGORIES[t.category]?.label || t.category;
+    span.addEventListener('click', e => {
+      if (e.detail === 2) { // double-click to remove
+        pushUndo();
+        lineEntry.tags.splice(idx, 1);
+        renderBreakdownTags(lineEntry);
+        updateBreakdownSidebar();
+        markUnsaved();
+      }
+    });
+    frag.appendChild(span);
+    lastEnd = t.end;
+  });
+  if (lastEnd < text.length) frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+  el.innerHTML = '';
+  el.appendChild(frag);
+}
+
+function reconcileTagPositions(lineEntry, oldText, newText) {
+  if (!lineEntry.tags || !lineEntry.tags.length) return;
+  if (oldText === newText) return;
+  // Simple approach: find where the edit occurred and shift tags
+  const minLen = Math.min(oldText.length, newText.length);
+  let editStart = 0;
+  while (editStart < minLen && oldText[editStart] === newText[editStart]) editStart++;
+  const delta = newText.length - oldText.length;
+  lineEntry.tags = lineEntry.tags.filter(t => {
+    if (editStart >= t.end) return true; // edit is after tag, no change
+    if (editStart <= t.start) { // edit is before tag, shift
+      t.start += delta;
+      t.end += delta;
+      return t.start >= 0;
+    }
+    // edit is inside tag — invalidate
+    return false;
+  });
+}
+
+function updateBreakdownSidebar() {
+  const div = document.getElementById('tab-breakdown');
+  if (!div) return;
+  // Group tags by scene
+  const scenes = [];
+  let currentScene = { title: '(Before first scene)', tags: [] };
+  scenes.push(currentScene);
+  lines.forEach((l, li) => {
+    if (l.type === 'scene-heading') {
+      currentScene = { title: l.el.innerText || '(untitled)', tags: [] };
+      scenes.push(currentScene);
+    }
+    if (l.tags && l.tags.length) {
+      l.tags.forEach(t => currentScene.tags.push({ ...t, lineIdx: li }));
+    }
+  });
+  // Render
+  const nonEmpty = scenes.filter(s => s.tags.length > 0);
+  if (nonEmpty.length === 0) {
+    div.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:8px;">No breakdown tags yet. Select text and press Ctrl+B to tag.</div>';
+    return;
+  }
+  let html = '';
+  nonEmpty.forEach(scene => {
+    html += `<div class="breakdown-scene"><div class="breakdown-scene-title">${escHtml(scene.title)}</div>`;
+    // Group by category
+    const byCat = {};
+    scene.tags.forEach(t => { if (!byCat[t.category]) byCat[t.category] = []; byCat[t.category].push(t); });
+    Object.entries(byCat).forEach(([cat, tags]) => {
+      const catInfo = BREAKDOWN_CATEGORIES[cat] || { label: cat, color: '#999' };
+      html += `<div class="breakdown-cat-header"><span class="bp-dot" style="background:${catInfo.color};display:inline-block;width:8px;height:8px;border-radius:50;margin-right:4px"></span>${catInfo.label}</div>`;
+      tags.forEach(t => {
+        html += `<div class="breakdown-item" onclick="scrollToLineIdx(${t.lineIdx})"><span class="bp-dot" style="background:${catInfo.color}"></span>${escHtml(t.text)}</div>`;
+      });
+    });
+    html += '</div>';
+  });
+  div.innerHTML = html;
+}
+
+function scrollToLineIdx(idx) {
+  if (idx >= 0 && idx < lines.length) {
+    lines[idx].el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    lines[idx].el.focus();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // GLOBAL KEY SHORTCUTS
 // ═══════════════════════════════════════════════════════
 function globalKeys(e) {
@@ -2374,7 +2817,10 @@ function globalKeys(e) {
   if (ctrl && e.key === 'h') { e.preventDefault(); toggleFindBar(); setTimeout(() => document.getElementById('replace-input').focus(), 50); return; }
   if (ctrl && e.key === 'f') { e.preventDefault(); toggleFindBar(); return; }
   if (ctrl && e.key === 'n') { e.preventDefault(); newScript(); return; }
+  if (ctrl && e.key === 'd') { e.preventDefault(); if (currentLine) toggleDualDialogue(currentLine); return; }
+  if (ctrl && e.key === 'b') { e.preventDefault(); initiateBreakdownTag(); return; }
   if (e.key === 'Escape') {
+    if (document.getElementById('breakdown-picker').classList.contains('open')) { hideBreakdownPicker(); return; }
     if (document.getElementById('find-bar').classList.contains('open')) { closeFindBar(); return; }
     if (document.getElementById('modal-overlay')?.style.display === 'flex') { closeImportModal(); return; }
   }
