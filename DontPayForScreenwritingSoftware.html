@@ -423,6 +423,15 @@
     gap: 8px;
   }
   .title-page-title { font-size: 14pt; font-weight: 700; text-transform: uppercase; }
+  /* Title page rendered as a real, printable page */
+  .title-page-host { display: flex; flex-direction: column; }
+  .title-page-host .title-page-block {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+  }
+  .title-page-contact { margin-top: auto; align-self: flex-start; text-align: left; }
 
   /* ─── SCROLLBAR ─── */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1267,15 +1276,16 @@ function escHtml(text) {
 function applyImport() {
   if (!importedLines.length) return;
 
-  const page = document.getElementById('page-1');
-  page.innerHTML = '<div class="page-number">1.</div>';
-  lines = [];
+  clearEditor();
   characterNames = new Set();
 
+  paginationSuspended = true;
   importedLines.forEach(l => {
     addLine(l.type, l.text, false);
     if (l.type === 'character') characterNames.add(l.text.toUpperCase());
   });
+  paginationSuspended = false;
+  repaginate();
 
   if (lines.length === 0) addLine('action', '', true);
   else lines[0].el.focus();
@@ -1301,6 +1311,9 @@ let acOptions = [];
 let findMatches = [];
 let findIdx = 0;
 let titlePageData = null;
+
+const STORAGE_KEY = 'dpfsw_autosave';
+const LEGACY_STORAGE_KEY = 'scriptforge_autosave';
 
 // Undo / Redo
 let undoStack = [];   // array of snapshots [{lines:[{type,text}], focusIdx}]
@@ -1332,6 +1345,148 @@ const NEXT_TYPE = {
   'transition': 'scene-heading',
   'centered': 'action',
 };
+
+// ═══════════════════════════════════════════════════════
+// PAGINATION
+// US Letter @ 96dpi = 816 × 1056px. 1" top/bottom margins
+// leave 1056 − 96·2 = 864px of printable height per page.
+// ═══════════════════════════════════════════════════════
+const PAGE_CONTENT_HEIGHT = 864;
+let paginationSuspended = false;
+let repagTimer = null;
+
+function newPageEl(num) {
+  const page = document.createElement('div');
+  page.className = 'page';
+  const pn = document.createElement('div');
+  pn.className = 'page-number';
+  pn.textContent = num + '.';
+  page.appendChild(pn);
+  return page;
+}
+
+function makeTitlePageEl() {
+  const t = titlePageData || {};
+  const host = document.createElement('div');
+  host.className = 'page title-page-host';
+  const block = document.createElement('div');
+  block.className = 'title-page-block';
+  let html = `<div class="title-page-title">${escHtml((t.title || '').toUpperCase())}</div>`;
+  html += `<div style="height:36px"></div><div>written by</div><div style="height:8px"></div>`;
+  html += `<div>${escHtml(t.author || '')}</div>`;
+  if (t.based) html += `<div style="height:24px"></div><div>${escHtml(t.based)}</div>`;
+  if (t.contact) html += `<div class="title-page-contact">${escHtml(t.contact).replace(/\s*·\s*/g, '<br>')}</div>`;
+  block.innerHTML = html;
+  host.appendChild(block);
+  return host;
+}
+
+function getScriptPageCount() {
+  const all = document.querySelectorAll('#page-container .page').length;
+  return Math.max(1, all - (titlePageData ? 1 : 0));
+}
+
+// Lay every line out in one continuous flow, read its position (which
+// accounts for collapsed margins and wrapping), then split into real pages.
+function repaginate() {
+  if (paginationSuspended) return;
+  const container = document.getElementById('page-container');
+
+  // Remember caret so editing isn't interrupted when nodes move.
+  const focusEl = document.activeElement && document.activeElement.classList &&
+    document.activeElement.classList.contains('script-line') ? document.activeElement : null;
+  const caret = focusEl ? getCaretOffset(focusEl) : null;
+
+  // 1) Measure: drop all lines into a single flow page.
+  container.innerHTML = '';
+  if (titlePageData) container.appendChild(makeTitlePageEl());
+  const flow = newPageEl(1);
+  lines.forEach(l => flow.appendChild(l.el));
+  container.appendChild(flow);
+
+  // Read-only loop → single layout pass.
+  const tops = lines.map(l => l.el.offsetTop);
+  const heights = lines.map(l => l.el.offsetHeight);
+
+  // 2) Group lines into pages by their flow position.
+  const pages = [];
+  let cur = [];
+  let pageTop = tops[0] || 0;
+  for (let k = 0; k < lines.length; k++) {
+    const bottom = tops[k] + heights[k];
+    if (cur.length > 0 && (bottom - pageTop) > PAGE_CONTENT_HEIGHT) {
+      pages.push(cur);
+      cur = [lines[k]];
+      pageTop = tops[k];
+    } else {
+      cur.push(lines[k]);
+    }
+  }
+  if (cur.length) pages.push(cur);
+
+  // 3) Rebuild real pages.
+  container.innerHTML = '';
+  if (titlePageData) container.appendChild(makeTitlePageEl());
+  if (pages.length === 0) {
+    container.appendChild(newPageEl(1));
+  } else {
+    pages.forEach((pl, pi) => {
+      const pg = newPageEl(pi + 1);
+      pl.forEach(l => pg.appendChild(l.el));
+      container.appendChild(pg);
+    });
+  }
+
+  // Restore caret.
+  if (focusEl) {
+    focusEl.focus();
+    if (caret != null) setCaretOffset(focusEl, caret);
+  }
+
+  const ps = document.getElementById('stat-pages');
+  if (ps) ps.textContent = 'Pages: ' + getScriptPageCount();
+}
+
+function scheduleRepaginate() {
+  clearTimeout(repagTimer);
+  repagTimer = setTimeout(repaginate, 180);
+}
+
+function getCaretOffset(el) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!el.contains(r.startContainer)) return null;
+  return r.startOffset;
+}
+
+function setCaretOffset(el, offset) {
+  const node = el.firstChild;
+  const r = document.createRange();
+  const sel = window.getSelection();
+  if (node && node.nodeType === 3) {
+    r.setStart(node, Math.min(offset, node.length));
+  } else {
+    r.selectNodeContents(el);
+  }
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+// Detach every line; pages are rebuilt by the next repaginate().
+function clearEditor() {
+  lines.forEach(l => { if (l.el.parentNode) l.el.parentNode.removeChild(l.el); });
+  lines = [];
+}
+
+// Bulk-load helper: add many lines without repaginating on each one.
+function loadLines(items) {
+  paginationSuspended = true;
+  items.forEach(l => addLine(l.type, l.text, false));
+  paginationSuspended = false;
+  repaginate();
+}
 
 // ═══════════════════════════════════════════════════════
 // INIT
@@ -1372,32 +1527,19 @@ function createLineEl(type, text) {
 
 function addLine(type, text, focus) {
   const el = createLineEl(type, text || '');
-  const page = document.getElementById('page-1');
-  page.appendChild(el);
   lines.push({ el, type });
-  if (focus) {
-    setTimeout(() => { el.focus(); placeCursorAtEnd(el); }, 10);
-  }
+  repaginate();
+  if (focus) { el.focus(); placeCursorAtEnd(el); }
   return el;
 }
 
 function insertLineAfter(refEl, type, text, focus) {
   const idx = lines.findIndex(l => l.el === refEl);
   const el = createLineEl(type, text || '');
-  const page = document.getElementById('page-1');
-  const refEntry = lines[idx];
-
-  if (idx >= 0 && idx < lines.length - 1) {
-    page.insertBefore(el, lines[idx + 1].el);
-    lines.splice(idx + 1, 0, { el, type });
-  } else {
-    page.appendChild(el);
-    lines.push({ el, type });
-  }
-
-  if (focus) {
-    setTimeout(() => { el.focus(); placeCursorAtEnd(el); }, 10);
-  }
+  if (idx >= 0) lines.splice(idx + 1, 0, { el, type });
+  else lines.push({ el, type });
+  repaginate();
+  if (focus) { el.focus(); placeCursorAtEnd(el); }
   return el;
 }
 
@@ -1406,6 +1548,7 @@ function removeLine(el) {
   if (idx >= 0) {
     lines.splice(idx, 1);
     el.remove();
+    repaginate();
     if (lines.length > 0) {
       const newIdx = Math.max(0, idx - 1);
       lines[newIdx].el.focus();
@@ -1533,6 +1676,7 @@ function onLineInput(e) {
   triggerAutocomplete(el);
   updateStats();
   updateSidebar();
+  scheduleRepaginate();
   markUnsaved();
 }
 
@@ -1628,9 +1772,13 @@ function renderAutocomplete() {
   const ac = document.getElementById('autocomplete');
   ac.innerHTML = '<div class="ac-header">Suggestions</div>' +
     acOptions.map((o, i) =>
-      `<div class="ac-item${i === acIndex ? ' selected' : ''}" onclick="applyAutocomplete('${o.replace(/'/g,"\\'")}')">
-        ${o}
+      `<div class="ac-item${i === acIndex ? ' selected' : ''}" onclick="applyAutocompleteIdx(${i})">
+        ${escHtml(o)}
       </div>`).join('');
+}
+
+function applyAutocompleteIdx(i) {
+  if (acOptions[i] != null) applyAutocomplete(acOptions[i]);
 }
 
 function applyAutocomplete(value) {
@@ -1669,7 +1817,7 @@ function updateSidebar() {
   } else {
     scenesDiv.innerHTML = sceneEls.map((s, i) =>
       `<div class="scene-item" onclick="scrollToLine(this)" data-idx="${lines.indexOf(s)}">
-        <span class="scene-num">${i + 1}</span>${s.el.innerText || '(empty)'}
+        <span class="scene-num">${i + 1}</span>${escHtml(s.el.innerText) || '(empty)'}
       </div>`
     ).join('');
   }
@@ -1688,7 +1836,7 @@ function updateSidebar() {
     charsDiv.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:8px;">No characters yet.</div>';
   } else {
     charsDiv.innerHTML = sorted.map(([name, count]) =>
-      `<div class="char-item"><span>${name}</span><span class="char-count">${count} lines</span></div>`
+      `<div class="char-item"><span>${escHtml(name)}</span><span class="char-count">${count} lines</span></div>`
     ).join('');
   }
 
@@ -1715,16 +1863,10 @@ function updateStats() {
   const allText = lines.map(l => l.el.innerText).join('\n');
   const words = allText.trim().split(/\s+/).filter(Boolean).length;
   const scenes = lines.filter(l => l.type === 'scene-heading').length;
-  // Rough page estimate: ~55 lines/page
-  const totalLines = lines.length + lines.reduce((a, l) => {
-    const t = l.el.innerText;
-    return a + (t ? Math.floor(t.length / 65) : 0);
-  }, 0);
-  const pages = Math.max(1, Math.ceil(totalLines / 55));
 
   document.getElementById('stat-words').textContent = `Words: ${words}`;
   document.getElementById('stat-scenes').textContent = `Scenes: ${scenes}`;
-  document.getElementById('stat-pages').textContent = `Pages: ~${pages}`;
+  document.getElementById('stat-pages').textContent = `Pages: ${getScriptPageCount()}`;
   document.getElementById('stat-chars').textContent = `Characters: ${new Set(lines.filter(l => l.type === 'character').map(l => l.el.innerText.trim().toUpperCase())).size}`;
 }
 
@@ -1742,24 +1884,21 @@ function getScriptData() {
 
 function autoSave() {
   try {
-    localStorage.setItem('scriptforge_autosave', JSON.stringify(getScriptData()));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getScriptData()));
     setSaved();
   } catch(e) {}
 }
 
 function loadFromStorage() {
   try {
-    const raw = localStorage.getItem('scriptforge_autosave');
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
     document.getElementById('title-input').value = data.title || 'Untitled';
     document.getElementById('notes-area').value = data.notes || '';
     titlePageData = data.titlePage || null;
-    const page = document.getElementById('page-1');
-    // clear
-    page.innerHTML = '<div class="page-number">1.</div>';
-    lines = [];
-    (data.lines || []).forEach(l => addLine(l.type, l.text, false));
+    clearEditor();
+    loadLines(data.lines || []);
     setSaved();
   } catch(e) {}
 }
@@ -1791,10 +1930,11 @@ function pushUndo() {
 }
 
 function applySnapshot(snapshot) {
-  const page = document.getElementById('page-1');
-  page.innerHTML = '<div class="page-number">1.</div>';
-  lines = [];
+  clearEditor();
+  paginationSuspended = true;
   snapshot.lines.forEach(l => addLine(l.type, l.text, false));
+  paginationSuspended = false;
+  repaginate();
   const focusEl = lines[snapshot.focusIdx >= 0 ? snapshot.focusIdx : lines.length - 1];
   if (focusEl) { focusEl.el.focus(); placeCursorAtEnd(focusEl.el); }
   updateStats();
@@ -1834,9 +1974,7 @@ function newScript() {
   document.getElementById('title-input').value = 'Untitled Screenplay';
   document.getElementById('notes-area').value = '';
   titlePageData = null;
-  const page = document.getElementById('page-1');
-  page.innerHTML = '<div class="page-number">1.</div>';
-  lines = [];
+  clearEditor();
   characterNames = new Set();
   addLine('scene-heading', '', true);
   updateStats();
@@ -1869,10 +2007,8 @@ function handleFileLoad(e) {
         document.getElementById('title-input').value = data.title || 'Untitled';
         document.getElementById('notes-area').value = data.notes || '';
         titlePageData = data.titlePage || null;
-        const page = document.getElementById('page-1');
-        page.innerHTML = '<div class="page-number">1.</div>';
-        lines = [];
-        (data.lines || []).forEach(l => addLine(l.type, l.text, false));
+        clearEditor();
+        loadLines(data.lines || []);
       } else if (file.name.endsWith('.fdx')) {
         importFDX(ev.target.result);
       } else {
@@ -1893,9 +2029,8 @@ function handleFileLoad(e) {
 // FOUNTAIN IMPORT/EXPORT
 // ═══════════════════════════════════════════════════════
 function importFountain(text) {
-  const page = document.getElementById('page-1');
-  page.innerHTML = '<div class="page-number">1.</div>';
-  lines = [];
+  clearEditor();
+  paginationSuspended = true;
   const rawLines = text.split('\n');
   let prevBlank = true;
   rawLines.forEach(raw => {
@@ -1910,7 +2045,9 @@ function importFountain(text) {
     addLine(type, t, false);
     prevBlank = false;
   });
+  paginationSuspended = false;
   if (lines.length === 0) addLine('action','',true);
+  else repaginate();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1918,15 +2055,16 @@ function importFountain(text) {
 // ═══════════════════════════════════════════════════════
 function importFDX(xmlText) {
   const parsed = parseFDX(xmlText);
-  const page = document.getElementById('page-1');
-  page.innerHTML = '<div class="page-number">1.</div>';
-  lines = [];
+  clearEditor();
   characterNames = new Set();
+  paginationSuspended = true;
   parsed.forEach(l => {
     addLine(l.type, l.text, false);
     if (l.type === 'character') characterNames.add(l.text.toUpperCase());
   });
+  paginationSuspended = false;
   if (lines.length === 0) addLine('action', '', true);
+  else repaginate();
 }
 
 function parseFDX(xmlText) {
@@ -2029,8 +2167,8 @@ function insertTitlePage() {
     contact: document.getElementById('tp-contact').value,
   };
   closeTitlePageModal();
+  repaginate();
   markUnsaved();
-  alert('Title page saved! It will appear when you export to PDF or Fountain.');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2085,6 +2223,16 @@ function scrollToMatch(match) {
   const el = lines[match.lineIdx].el;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.focus();
+  // Highlight the match by selecting it.
+  const node = el.firstChild;
+  if (node && node.nodeType === 3) {
+    const r = document.createRange();
+    r.setStart(node, Math.min(match.pos, node.length));
+    r.setEnd(node, Math.min(match.pos + match.len, node.length));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
 }
 
 function clearHighlights() {
@@ -2157,13 +2305,15 @@ function placeCursorAtEnd(el) {
 // Print styles
 const printStyle = document.createElement('style');
 printStyle.textContent = `
+@page { size: letter; margin: 0; }
 @media print {
   #toolbar, #element-bar, #sidebar, #statusbar, #autocomplete, #find-bar, #modal-overlay { display: none !important; }
-  body { background: white; }
+  body { background: white; height: auto; overflow: visible; }
   #main { display: block; }
   #editor-wrapper { overflow: visible; padding: 0; background: white; }
   #page-container { max-width: none; }
-  .page { box-shadow: none; margin: 0; padding: 96px 96px 96px 144px; page-break-after: always; }
+  .page { box-shadow: none; border-radius: 0; margin: 0; padding: 96px 96px 96px 144px; page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
   .script-line[contenteditable] { outline: none; }
 }`;
 document.head.appendChild(printStyle);
